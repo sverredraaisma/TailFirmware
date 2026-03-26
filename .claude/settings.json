@@ -25,7 +25,8 @@
       "Bash(tail:*)",
       "Bash(jq:*)",
       "Bash(cmake:*)",
-      "Read(C:/Users/Sverr/CLionProjects/raspberryPiPicoSDK/**/*)"
+      "Read(C:/Users/Sverr/CLionProjects/raspberryPiPicoSDK/**/*)",
+      "Read(C:/Users/Sverr/esp/esp-idf/**/*)"
     ],
     "deny": [
       "Read(**/.env*)",

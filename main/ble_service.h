@@ -9,7 +9,6 @@ typedef enum {
     BLE_STATE_CONNECTED,
 } ble_state_t;
 
-// Callback type for servo commands received over BLE
 typedef void (*ble_servo_cmd_callback_t)(uint8_t servo_id, uint8_t angle);
 
 void ble_service_init(ble_servo_cmd_callback_t callback);

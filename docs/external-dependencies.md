@@ -1,81 +1,48 @@
 # External Dependencies
 
-All external code comes bundled within the Pico SDK. No additional package managers or downloads are needed beyond the SDK itself.
+All external code comes bundled within ESP-IDF. No additional package managers or downloads are needed beyond the ESP-IDF installation.
 
-## Pico SDK Libraries Used
+## ESP-IDF Components Used
 
-### pico_stdlib
-Standard library for Pico development. Provides GPIO, timing, and stdio functionality.
+### NimBLE (bt component)
+Apache NimBLE BLE stack, included in ESP-IDF's `bt` component. Provides the full BLE peripheral stack:
+- GAP (Generic Access Profile) for advertising and connections
+- GATT server for service/characteristic definitions
+- Security Manager for pairing, bonding, and secure connections
+- NVS-backed persistent storage for bonding keys (automatic)
 
-### hardware_pwm
-RP2350 hardware PWM driver. Used to generate 50Hz servo control signals. Provides functions for configuring PWM slices, clock dividers, wrap values, and duty cycles.
+NimBLE is configured via `sdkconfig` (menuconfig) rather than a manual config header. Key settings in `sdkconfig.defaults`:
+- `CONFIG_BT_NIMBLE_ENABLED=y` - Use NimBLE (not Bluedroid)
+- `CONFIG_BT_NIMBLE_ROLE_CENTRAL=n` - Disable unused roles to save flash
+- `CONFIG_BT_NIMBLE_SM_SC=y` - Enable LE Secure Connections
 
-### hardware_clocks
-Clock management for RP2350. Used to query `clk_sys` frequency at runtime for dynamic PWM divider calculation (avoids hardcoding the 150MHz default).
+### LEDC (esp_driver_ledc)
+LED Control PWM peripheral driver. Used to generate 50Hz servo control signals. ESP32-C3 supports only low-speed mode with 6 channels (we use 4). The LEDC handles clock dividers and duty cycle internally given a target frequency and resolution.
 
-### hardware_gpio
-GPIO configuration. Used for `gpio_set_function()` to assign pins to PWM function.
+### GPIO (esp_driver_gpio)
+GPIO driver for the onboard LED control (GPIO 8). Used for status indication blink patterns.
 
-### pico_btstack_ble
-BTstack BLE library integration for the Pico SDK. Provides the full Bluetooth Low Energy stack including:
-- L2CAP (Logical Link Control and Adaptation Protocol)
-- ATT (Attribute Protocol) server
-- SM (Security Manager)
-- GATT server framework
-- BLE advertisement management
+### NVS Flash (nvs_flash)
+Non-Volatile Storage library. Stores BLE bonding keys, GATT CCC states, and other persistent data in a dedicated flash partition. Must be initialized before NimBLE starts.
 
-[BTstack](https://github.com/bluekitchen/btstack) is a dual-mode Bluetooth stack by BlueKitchen GmbH, bundled in the Pico SDK at `lib/btstack/`.
+### FreeRTOS (freertos)
+Real-time operating system kernel, built into ESP-IDF. The firmware uses two FreeRTOS tasks:
+- **NimBLE host task** (priority 5, 4KB stack) - runs `nimble_port_run()` for all BLE processing
+- **LED task** (priority 1, 2KB stack) - blinks the status LED based on BLE state
 
-### pico_btstack_cyw43
-Bridges BTstack to the CYW43439 wireless chip's Bluetooth interface. Provides the HCI transport layer that sends/receives Bluetooth packets over the shared SPI bus to the CYW43439.
+### ESP Logging (log)
+ESP-IDF logging framework. Used via `ESP_LOGI`, `ESP_LOGE`, `ESP_LOGW` macros. Output goes to USB-Serial-JTAG console.
 
-Requires these btstack_config.h defines:
-- `HCI_OUTGOING_PRE_BUFFER_SIZE >= 4` (CYW43 packet header size)
-- `HCI_ACL_CHUNK_SIZE_ALIGNMENT = 4` (alignment requirement)
+## Key Differences from Pico 2W Version
 
-### pico_cyw43_arch_none
-CYW43 architecture layer configured for **BLE-only** (no WiFi/lwIP). This is critical - the other arch variants (`pico_cyw43_arch_threadsafe_background`, `pico_cyw43_arch_lwip_*`) set `CYW43_LWIP=1` which requires the lwIP TCP/IP stack and an `lwipopts.h` header.
-
-`pico_cyw43_arch_none` sets `CYW43_LWIP=0` and still uses the threadsafe_background async context internally, so BLE callbacks work without polling.
-
-**Why not `pico_cyw43_arch_threadsafe_background` directly?**
-That library does not explicitly set `CYW43_LWIP`, and the CYW43 driver defaults it to 1 in `cyw43_config.h:137`. This causes `cyw43.h` to `#include "lwip/netif.h"`, which fails without lwIP linked. The `_none` variant is the correct choice for BLE-only projects.
-
-### CYW43439 Driver
-Infineon CYW43439 WiFi/Bluetooth combo chip driver, bundled at `lib/cyw43-driver/`. Manages the SPI communication with the wireless chip, firmware loading, and provides the low-level interface for both WiFi and Bluetooth.
-
-## Build-Time Tools
-
-### compile_gatt.py
-BTstack's GATT database compiler (`lib/btstack/tool/compile_gatt.py`). Invoked automatically by `pico_btstack_make_gatt_header()` in CMake. Reads `.gatt` files and generates C headers containing:
-- `profile_data[]` array (binary GATT database)
-- `ATT_CHARACTERISTIC_*_VALUE_HANDLE` defines for each characteristic
-- `ATT_CHARACTERISTIC_*_CLIENT_CONFIGURATION_HANDLE` defines for CCC descriptors
-
-### pioasm
-PIO (Programmable I/O) assembler. Compiles `.pio` programs used by the CYW43 SPI driver. Built from source as a host tool during the first build.
-
-### picotool
-Raspberry Pi Pico utility tool. Used during the build to embed binary info and generate UF2 files. Built from source if not installed system-wide.
-
-## btstack_config.h Reference
-
-BTstack requires a project-level `btstack_config.h` header. Missing defines cause hard `#error` failures. Here are the required defines and why:
-
-| Define | Value | Required By |
-|--------|-------|-------------|
-| `ENABLE_LE_PERIPHERAL` | (flag) | BTstack BLE peripheral role |
-| `HCI_ACL_PAYLOAD_SIZE` | 259 | BTstack HCI layer |
-| `MAX_NR_BTSTACK_LINK_KEY_DB_MEMORY_ENTRIES` | 0 | BTstack (0 = BLE only, no classic) |
-| `MAX_NR_GATT_CLIENTS` | 1 | BTstack GATT |
-| `MAX_NR_HCI_CONNECTIONS` | 1 | BTstack HCI |
-| `MAX_NR_L2CAP_SERVICES` | 3 | BTstack L2CAP |
-| `MAX_NR_L2CAP_CHANNELS` | 3 | BTstack L2CAP |
-| `MAX_NR_SM_LOOKUP_ENTRIES` | 3 | BTstack Security Manager |
-| `MAX_NR_WHITELIST_ENTRIES` | 1 | BTstack whitelist |
-| `NVN_NUM_GATT_SERVER_CCC` | 1 | BTstack GATT CCC descriptors |
-| `NVM_NUM_DEVICE_DB_ENTRIES` | 16 | `le_device_db_tlv.c` - paired device storage |
-| `NVM_NUM_LINK_KEYS` | 16 | BTstack link key storage |
-| `MAX_ATT_DB_SIZE` | 512 | `att_db_util.c` - static ATT DB allocation |
-| `HCI_OUTGOING_PRE_BUFFER_SIZE` | 4 | `btstack_hci_transport_cyw43.c` - CYW43 packet header |
-| `HCI_ACL_CHUNK_SIZE_ALIGNMENT` | 4 | `btstack_hci_transport_cyw43.c` - CYW43 alignment |
+| Aspect | Pico 2W (BTstack) | ESP32-C3 (NimBLE) |
+|--------|-------------------|-------------------|
+| GATT definition | `.gatt` file compiled by `compile_gatt.py` | C struct table (`ble_gatt_svc_def`) |
+| Read/write callbacks | Separate `att_read_callback` and `att_write_callback` | Single `access_cb` per characteristic with `ctxt->op` switch |
+| CCC handling | Manual (handle read/write in callbacks) | Automatic (NimBLE manages CCC internally) |
+| Notifications | `att_server_request_can_send_now_event` + `ATT_EVENT_CAN_SEND_NOW` | `ble_gatts_notify_custom(conn, handle, mbuf)` directly |
+| Bond storage | Manual TLV flash bank init | Automatic via NVS |
+| Advertising | Manual byte array construction | `ble_hs_adv_fields` struct with named fields |
+| Stack config | `btstack_config.h` with ~15 defines | `sdkconfig` via menuconfig |
+| PWM peripheral | Hardware PWM slices with manual clock divider | LEDC with automatic clock management |
+| Task model | Bare-metal main loop + interrupt-driven BLE | FreeRTOS tasks |

@@ -1,34 +1,39 @@
 # TailFirmware
 
-Firmware for Raspberry Pi Pico 2W that controls 4 servos via BLE commands, advertising as "Tail controller".
+Firmware for ESP32-C3 that controls 4 servos via BLE commands, advertising as "Tail controller".
 
 ## Build
 
-Requires: Pico SDK 2.2.0, ARM GCC toolchain, CMake, Ninja, Python 3, and a host C++ compiler (MinGW/MSVC) for SDK tools (pioasm, picotool).
+Requires: ESP-IDF v5.4+ (installed via Espressif Windows installer at `C:\Espressif`).
 
 ```bash
-mkdir build && cd build
-cmake -G Ninja ..
-ninja
+# From ESP-IDF CMD prompt (not Git Bash):
+idf.py set-target esp32c3
+idf.py build
 ```
 
-Output: `build/TailFirmware.uf2` - flash by holding BOOTSEL and dragging to the USB drive.
+Or from Git Bash:
+```bash
+cmd.exe /c "C:\Espressif\idf_cmd_init.bat && cd /d C:\Users\Sverr\CLionProjects\TailFirmware && idf.py set-target esp32c3 && idf.py build"
+```
+
+Output: `build/TailFirmware.bin` - flash via `idf.py flash monitor`.
 
 ## Project Structure
 
-- `src/main.c` - Entry point, initializes CYW43, servos, and BLE
-- `src/servo.h/c` - PWM servo control for 4 servos on GPIO 2-5
-- `src/ble_service.h/c` - BLE GATT server with custom service
-- `src/tail_service.gatt` - BTstack GATT database definition (compiled to `tail_service.h` at build time)
-- `src/btstack_config.h` - BTstack configuration defines
+- `main/main.c` - Entry point (app_main), NVS init, LED status task
+- `main/servo.h/c` - LEDC PWM servo control for 4 servos on GPIO 3-6
+- `main/ble_service.h/c` - NimBLE GATT server with custom service
+- `sdkconfig.defaults` - ESP-IDF build configuration defaults
 
 ## Key Details
 
-- Board: `pico2_w` (RP2350 + CYW43439)
-- CYW43 arch: `pico_cyw43_arch_none` (BLE-only, no lwIP/WiFi stack)
-- BLE stack: BTstack (included in Pico SDK)
-- Servos: 50Hz PWM, 500-2500us pulse range, GPIO 2/3/4/5
-- Debug output: USB serial (stdio over USB)
+- Target: ESP32-C3 (RISC-V, integrated BLE 5.0)
+- BLE stack: NimBLE (included in ESP-IDF)
+- PWM: LEDC peripheral, 50Hz, 14-bit resolution, 500-2500us pulse range
+- Servo GPIOs: 3, 4, 5, 6 (configurable in servo.h)
+- LED GPIO: 8 (onboard LED on most ESP32-C3 dev boards)
+- Debug output: USB-Serial-JTAG (built-in USB on ESP32-C3)
 
 ## BLE Protocol
 
@@ -41,7 +46,7 @@ Service UUID: `0000FF00-0000-1000-8000-00805F9B34FB`
 
 ## Conventions
 
-- C11 standard, no C++ in firmware sources
-- Pico SDK environment variable `PICO_SDK_PATH` must be set
-- GATT header is auto-generated - edit `tail_service.gatt`, not the generated header
-- BTstack handle constants follow pattern: `ATT_CHARACTERISTIC_<UUID_WITH_UNDERSCORES>_01_VALUE_HANDLE`
+- C11 standard
+- ESP-IDF component model (main/ directory)
+- NimBLE GATT services defined as static table in ble_service.c
+- NVS flash required for BLE bonding persistence

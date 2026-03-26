@@ -4,58 +4,83 @@
 
 | Tool | Version Used | Purpose |
 |------|-------------|---------|
-| [Pico SDK](https://github.com/raspberrypi/pico-sdk) | 2.2.0 | Hardware abstraction, build system, libraries |
-| [ARM GNU Toolchain](https://developer.arm.com/downloads/-/arm-gnu-toolchain-downloads) | 15.2.1 (arm-none-eabi) | Cross-compiler for RP2350 (Cortex-M33) |
-| [CMake](https://cmake.org/) | 4.3.0 | Build system generator |
-| [Ninja](https://ninja-build.org/) | 1.13.2 | Fast build executor |
-| [Python 3](https://www.python.org/) | 3.14.3 | Required by SDK tools (GATT compiler, etc.) |
-| Host C++ compiler (MinGW-w64 GCC) | 15.2.0 | Builds SDK host tools (pioasm, picotool) |
+| [ESP-IDF](https://github.com/espressif/esp-idf) | v5.4.1 | Espressif IoT Development Framework |
+| RISC-V GCC Toolchain | esp-14.2.0 | Cross-compiler for ESP32-C3 (RISC-V) |
+| [CMake](https://cmake.org/) | 3.30.2 (bundled with ESP-IDF) | Build system generator |
+| [Ninja](https://ninja-build.org/) | 1.12.1 (bundled with ESP-IDF) | Fast build executor |
+| Python 3 | 3.11.2 (bundled with ESP-IDF) | Required by ESP-IDF build tools |
 
-## Environment Variables
+All tools are installed via the [ESP-IDF Windows Installer](https://docs.espressif.com/projects/esp-idf/en/stable/esp32c3/get-started/windows-setup.html) at `C:\Espressif`.
 
-- `PICO_SDK_PATH` - Must point to the Pico SDK root directory (e.g., `C:\Users\Sverr\CLionProjects\raspberryPiPicoSDK\pico-sdk`)
+## Environment Setup
+
+ESP-IDF on Windows uses its own Python environment and toolchains. These are managed by the installer and don't require manual PATH setup for normal use.
+
+**ESP-IDF CMD Prompt:** The installer creates a start menu shortcut that opens CMD with everything configured. This is the recommended way to build.
+
+**Git Bash / CLion:** Use the included `build.bat` wrapper which sets up all required environment variables (`IDF_PATH`, `IDF_PYTHON_ENV_PATH`, `ESP_ROM_ELF_DIR`, toolchain paths).
 
 ## Build Commands
 
+### From ESP-IDF CMD prompt
+
 ```bash
-# Configure (first time or after CMakeLists.txt changes)
-mkdir build && cd build
-cmake -G Ninja ..
+# First time: set target chip
+idf.py set-target esp32c3
 
 # Build
-ninja
+idf.py build
 
-# Clean rebuild
-# Delete the build/ directory and re-run configure + build
+# Flash and open serial monitor
+idf.py flash monitor
+
+# Just monitor (Ctrl+] to exit)
+idf.py monitor
+```
+
+### From Git Bash (via build.bat wrapper)
+
+```bash
+# Set target
+cmd.exe //c "C:\Users\Sverr\CLionProjects\TailFirmware\build.bat set-target esp32c3"
+
+# Build
+cmd.exe //c "C:\Users\Sverr\CLionProjects\TailFirmware\build.bat build"
+
+# Flash and monitor
+cmd.exe //c "C:\Users\Sverr\CLionProjects\TailFirmware\build.bat flash monitor"
 ```
 
 ## Output Files
 
 | File | Description |
 |------|-------------|
-| `build/TailFirmware.uf2` | UF2 firmware image for drag-and-drop flashing |
-| `build/TailFirmware.elf` | ELF binary for debugger use |
-| `build/TailFirmware.bin` | Raw binary image |
-| `build/TailFirmware.hex` | Intel HEX format |
+| `build/TailFirmware.bin` | Application binary |
+| `build/TailFirmware.elf` | ELF binary for debugging |
+| `build/bootloader/bootloader.bin` | Second-stage bootloader |
+| `build/partition_table/partition-table.bin` | Flash partition table |
 
 ## Flashing
 
-1. Hold BOOTSEL button on the Pico 2W
-2. Connect USB cable (or press reset while holding BOOTSEL)
-3. A USB mass storage drive appears
-4. Copy `TailFirmware.uf2` to the drive
-5. The board reboots automatically
+The ESP32-C3 has a built-in USB-Serial-JTAG interface. Connect via USB and run:
+```bash
+idf.py flash monitor
+```
 
-## SDK Host Tools
+If the device isn't detected, hold the BOOT button while pressing RESET to enter download mode.
 
-The Pico SDK builds two host tools from source during the first build:
+## Configuration
 
-- **pioasm** - PIO assembler, compiles `.pio` files to C headers (used by CYW43 SPI driver)
-- **picotool** - Pico tool for binary inspection and flashing
+ESP-IDF uses `sdkconfig` for build configuration. Project defaults are in `sdkconfig.defaults`:
+- BLE enabled with NimBLE stack
+- Peripheral role only (central/observer/broadcaster disabled)
+- LE Secure Connections and Legacy pairing enabled
+- USB-Serial-JTAG console for debug output
 
-These require a **native** (non-ARM) C++ compiler. On Windows, this is satisfied by MinGW-w64 GCC (`g++`) or MSVC (`cl.exe`). The ARM cross-compiler (`arm-none-eabi-gcc`) cannot build these.
+To modify configuration interactively: `idf.py menuconfig`
 
 ## Known Build Notes
 
-- The GATT compiler (`compile_gatt.py`) warns about PyCryptodome not being installed. This is optional - it's only used to calculate the GATT Database Hash. Without it, a random hash is used, which is fine for development.
-- picotool is built from source if not installed system-wide. The SDK warns about this but it works fine.
+- **Git Bash / MSys2:** `idf.py` does not run directly in Git Bash (MSys is unsupported by ESP-IDF). Use `build.bat` or the ESP-IDF CMD prompt.
+- **CMake version:** ESP-IDF v5.4.1's `gdbinit.cmake` is incompatible with CMake 4.x. The build.bat forces use of ESP-IDF's bundled CMake 3.30.2.
+- **`ESP_ROM_ELF_DIR`:** Must be set for the build to succeed. The build.bat handles this automatically.

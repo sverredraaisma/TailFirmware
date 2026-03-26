@@ -4,7 +4,7 @@
 
 - **Advertised Name:** Tail controller
 - **Advertisement Type:** Connectable undirected
-- **Advertisement Interval:** 30ms (0x0030)
+- **Advertisement Interval:** 30-60ms
 - **Flags:** LE General Discoverable + BR/EDR Not Supported (0x06)
 
 ## GATT Service

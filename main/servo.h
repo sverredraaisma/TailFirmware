@@ -5,11 +5,11 @@
 
 #define NUM_SERVOS 4
 
-// GPIO pins for each servo (PWM-capable pins on Pico 2W header)
-#define SERVO_0_PIN 2
-#define SERVO_1_PIN 3
-#define SERVO_2_PIN 4
-#define SERVO_3_PIN 5
+// GPIO pins for each servo (change to match your wiring)
+#define SERVO_0_PIN 3
+#define SERVO_1_PIN 4
+#define SERVO_2_PIN 5
+#define SERVO_3_PIN 6
 
 // Servo pulse range in microseconds
 #define SERVO_MIN_PULSE_US 500

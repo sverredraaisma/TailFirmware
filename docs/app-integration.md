@@ -2,7 +2,7 @@
 
 ## Quick Start
 
-1. Power on the Pico 2W - the LED blinks fast when advertising
+1. Power on the ESP32-C3 - the LED blinks fast when advertising
 2. Open your BLE app and scan for devices
 3. Connect to **"Tail controller"**
 4. Find service `0000FF00-0000-1000-8000-00805F9B34FB`

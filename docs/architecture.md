@@ -2,10 +2,10 @@
 
 ## Overview
 
-TailFirmware runs on the Raspberry Pi Pico 2W (RP2350 MCU + CYW43439 wireless chip). It exposes a BLE GATT server that accepts servo commands from a connected client and drives 4 PWM outputs to control servos.
+TailFirmware runs on the ESP32-C3 (RISC-V MCU with integrated BLE 5.0). It exposes a BLE GATT server that accepts servo commands from a connected client and drives 4 PWM outputs to control servos.
 
 ```
-BLE Client  --(GATT write)-->  ble_service  --(callback)-->  servo module  --(PWM)-->  Servos
+BLE Client  --(GATT write)-->  ble_service  --(callback)-->  servo module  --(LEDC PWM)-->  Servos
                                     |
                               advertises as
                             "Tail controller"
@@ -16,84 +16,93 @@ BLE Client  --(GATT write)-->  ble_service  --(callback)-->  servo module  --(PW
 ### main.c
 
 Initialization sequence:
-1. `stdio_init_all()` - USB serial for debug
-2. `cyw43_arch_init()` - Initialize CYW43439 wireless chip
-3. `servo_init()` - Configure PWM on GPIO 2-5
-4. `ble_service_init(callback)` - Set up BTstack BLE stack and start advertising
-5. `hci_power_control(HCI_POWER_ON)` - Power on Bluetooth
-6. Infinite loop with `tight_loop_contents()`
+1. `nvs_flash_init()` - Initialize NVS (required for BLE bonding storage)
+2. `servo_init()` - Configure LEDC PWM on GPIO 3-6
+3. `ble_service_init(callback)` - Initialize NimBLE stack, GATT services, start host task
+4. `xTaskCreate(led_task, ...)` - Start LED status blink task
 
-The main loop does nothing because BLE events are handled in the background by the threadsafe_background async context (interrupts/timers).
+After initialization, `app_main()` returns. The firmware runs via FreeRTOS tasks:
+- **NimBLE host task** - handles all BLE operations (advertising, connections, GATT)
+- **LED task** - blinks the onboard LED based on BLE connection state
 
 ### servo module (servo.h/c)
 
-Controls 4 servos via hardware PWM.
+Controls 4 servos via the LEDC (LED Control) PWM peripheral.
 
 **Pin assignments:**
 
-| Servo | GPIO | PWM Slice | Channel |
-|-------|------|-----------|---------|
-| 0     | 2    | 1         | A       |
-| 1     | 3    | 1         | B       |
-| 2     | 4    | 2         | A       |
-| 3     | 5    | 2         | B       |
+| Servo | GPIO | LEDC Channel |
+|-------|------|-------------|
+| 0     | 3    | 0           |
+| 1     | 4    | 1           |
+| 2     | 5    | 2           |
+| 3     | 6    | 3           |
 
 **PWM configuration:**
-- Clock divider: `sys_clk / 1,000,000` (dynamically calculated, 150.0 at default 150MHz RP2350 clock)
-- Wrap value: 19999 (20ms period = 50Hz)
-- Pulse range: 500 counts (0 degrees) to 2500 counts (180 degrees)
+- Peripheral: LEDC low-speed mode (ESP32-C3 only supports low-speed)
+- Timer: LEDC_TIMER_0, shared by all 4 channels
+- Resolution: 14-bit (16384 steps per period)
+- Frequency: 50Hz (20ms period)
+- Pulse range: 500us (0 degrees) to 2500us (180 degrees)
 - All servos initialize to 90 degrees (center)
 
-The angle-to-pulse mapping is linear:
+The angle-to-duty mapping:
 ```
 pulse_us = 500 + (angle * 2000 / 180)
+duty = pulse_us * 16384 / 20000
 ```
 
 ### ble_service module (ble_service.h/c)
 
-Manages the BLE GATT server using BTstack.
+Manages the BLE GATT server using NimBLE (included in ESP-IDF).
 
 **Initialization:**
-1. `l2cap_init()` - L2CAP protocol layer
-2. `sm_init()` - Security Manager (default config, no pairing requirements)
-3. `att_server_init()` - ATT server with generated GATT database and read/write callbacks
-4. Configure advertisements (30ms interval, connectable undirected)
-5. Register HCI event handler and ATT packet handler
+1. `nimble_port_init()` - Initialize NimBLE controller and host
+2. Configure `ble_hs_cfg` - Set callbacks, security (Just Works + bonding + SC)
+3. `ble_svc_gap_device_name_set()` - Set advertised name
+4. `gatt_svc_init()` - Register GAP, GATT, and custom servo services
+5. `xTaskCreate(nimble_host_task, ...)` - Start NimBLE host task
 
-**Advertisement data** is manually constructed with:
-- Flags: LE General Discoverable + BR/EDR Not Supported (0x06)
+The NimBLE host task runs `nimble_port_run()`, which blocks and processes all BLE events internally.
+
+**GATT service table** is defined as a static `ble_gatt_svc_def` array:
+- Service: `0000FF00-...`
+  - Servo Command characteristic (`0000FF01-...`): WRITE | WRITE_NO_RSP
+  - Servo State characteristic (`0000FF02-...`): READ | NOTIFY
+
+**Access callbacks:**
+- `servo_cmd_access`: Handles write operations, extracts servo_id + angle, calls the servo command callback, sends notification if subscribed
+- `servo_state_access`: Handles read operations, returns 4-byte array of current angles
+
+**GAP event handler:**
+- `BLE_GAP_EVENT_CONNECT`: Tracks connection handle, updates state
+- `BLE_GAP_EVENT_DISCONNECT`: Resets state, restarts advertising
+- `BLE_GAP_EVENT_SUBSCRIBE`: Tracks notification subscription for servo state
+- `BLE_GAP_EVENT_ADV_COMPLETE`: Restarts advertising
+
+**Advertisement data** is set via NimBLE's `ble_hs_adv_fields` struct:
+- Flags: LE General Discoverable + BR/EDR Not Supported
 - Complete Local Name: "Tail controller"
-- 128-bit service UUID list
-
-**GATT callbacks:**
-- `att_read_callback`: Returns 4-byte array of current servo angles
-- `att_write_callback`: Parses 2-byte command (servo_id + angle), calls servo_cmd_callback, triggers notification if enabled
-- `packet_handler`: Handles connect/disconnect events and CAN_SEND_NOW for notifications
+- Scan response: 128-bit service UUID
 
 **Connection behavior:**
-- On disconnect: re-enables advertising automatically
-- Notifications: client must enable via CCC descriptor write
-- Single connection supported (MAX_NR_HCI_CONNECTIONS = 1)
-
-### tail_service.gatt
-
-BTstack GATT database definition file. Compiled at build time by `compile_gatt.py` into `tail_service.h`, which contains:
-- `profile_data[]` - binary GATT database
-- Handle defines like `ATT_CHARACTERISTIC_0000FF01_0000_1000_8000_00805F9B34FB_01_VALUE_HANDLE`
+- On disconnect: restarts advertising automatically
+- Notifications: managed by NimBLE via BLE_GAP_EVENT_SUBSCRIBE (no manual CCC handling)
+- Bonding keys stored in NVS flash automatically by NimBLE
 
 ## Data Flow
 
 ### Writing a servo command
 
 1. BLE client writes `[servo_id, angle]` to characteristic `0000FF01-...`
-2. BTstack calls `att_write_callback()` in `ble_service.c`
-3. Callback invokes `servo_cmd_callback` (set during init, points to `on_servo_command` in main.c)
-4. `on_servo_command` calls `servo_set_angle(servo_id, angle)`
-5. `servo_set_angle` updates the PWM duty cycle on the corresponding GPIO
-6. If notifications are enabled, a state update is queued via `att_server_request_can_send_now_event`
+2. NimBLE calls `servo_cmd_access()` with `BLE_GATT_ACCESS_OP_WRITE_CHR`
+3. Callback extracts 2 bytes from the mbuf, invokes `servo_cmd_callback`
+4. `on_servo_command` (in main.c) calls `servo_set_angle(servo_id, angle)`
+5. `servo_set_angle` updates the LEDC duty cycle via `ledc_set_duty` + `ledc_update_duty`
+6. If notifications are enabled, builds an mbuf with all 4 angles and calls `ble_gatts_notify_custom`
 
 ### Reading servo state
 
 1. BLE client reads characteristic `0000FF02-...`
-2. BTstack calls `att_read_callback()` in `ble_service.c`
-3. Callback collects all 4 angles via `servo_get_angle()` and returns them
+2. NimBLE calls `servo_state_access()` with `BLE_GATT_ACCESS_OP_READ_CHR`
+3. Callback collects all 4 angles via `servo_get_angle()` and appends to response mbuf
