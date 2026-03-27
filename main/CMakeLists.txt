@@ -1,8 +1,10 @@
 idf_component_register(
     SRCS
         "main.c"
+        "app_bridge.cpp"
         "ble_service.c"
         "servo.c"
+        "config/config_manager.cpp"
         "drivers/i2c_mux.c"
         "drivers/encoder_driver.c"
         "drivers/imu_driver.c"
@@ -47,6 +49,7 @@ set(STUB_FILES
     led/effects/audio_bar_effect.cpp
     led/effects/audio_freq_bars_effect.cpp
     config/fft_buffer.cpp
+    config/config_manager.cpp
 )
 
 foreach(STUB ${STUB_FILES})

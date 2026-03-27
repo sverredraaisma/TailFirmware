@@ -38,6 +38,16 @@ public:
     /// Get layer count.
     uint8_t get_layer_count() const { return layers_.size(); }
 
+    /// Get a layer by index (returns nullptr-equivalent if out of range).
+    Layer *get_layer(uint8_t index) {
+        if (index >= layers_.size()) return nullptr;
+        return &layers_[index];
+    }
+    const Layer *get_layer(uint8_t index) const {
+        if (index >= layers_.size()) return nullptr;
+        return &layers_[index];
+    }
+
     /// Render all layers into the matrix.
     void render(LedMatrix &matrix, float dt);
 
