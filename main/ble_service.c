@@ -48,15 +48,8 @@ static int servo_cmd_access(uint16_t conn_handle, uint16_t attr_handle,
             ESP_LOGI(TAG, "Servo %d -> %d deg", servo_id, angle);
             servo_cmd_callback(servo_id, angle);
 
-            // Send notification if enabled
-            if (notify_enabled && conn_handle != BLE_HS_CONN_HANDLE_NONE) {
-                uint8_t angles[NUM_SERVOS];
-                for (int i = 0; i < NUM_SERVOS; i++) {
-                    angles[i] = servo_get_angle(i);
-                }
-                struct os_mbuf *om = ble_hs_mbuf_from_flat(angles, NUM_SERVOS);
-                ble_gatts_notify_custom(conn_handle, servo_state_handle, om);
-            }
+            // TODO Phase 10: notify with encoder positions from motion system
+            (void)notify_enabled;
         }
         return 0;
     }
@@ -67,11 +60,9 @@ static int servo_cmd_access(uint16_t conn_handle, uint16_t attr_handle,
 static int servo_state_access(uint16_t conn_handle, uint16_t attr_handle,
                               struct ble_gatt_access_ctxt *ctxt, void *arg) {
     if (ctxt->op == BLE_GATT_ACCESS_OP_READ_CHR) {
-        uint8_t angles[NUM_SERVOS];
-        for (int i = 0; i < NUM_SERVOS; i++) {
-            angles[i] = servo_get_angle(i);
-        }
-        os_mbuf_append(ctxt->om, angles, NUM_SERVOS);
+        // TODO Phase 10: return encoder positions from motion system
+        uint8_t state[NUM_SERVOS] = {0};
+        os_mbuf_append(ctxt->om, state, NUM_SERVOS);
         return 0;
     }
     return BLE_ATT_ERR_UNLIKELY;
