@@ -21,6 +21,7 @@ idf_component_register(
         "led/effects/audio_power_effect.cpp"
         "led/effects/audio_bar_effect.cpp"
         "led/effects/audio_freq_bars_effect.cpp"
+        "config/fft_buffer.cpp"
     INCLUDE_DIRS "." "drivers" "motion" "led" "ble" "config"
     PRIV_REQUIRES nvs_flash bt driver esp_driver_ledc esp_driver_gpio
 )
@@ -45,6 +46,7 @@ set(STUB_FILES
     led/effects/audio_power_effect.cpp
     led/effects/audio_bar_effect.cpp
     led/effects/audio_freq_bars_effect.cpp
+    config/fft_buffer.cpp
 )
 
 foreach(STUB ${STUB_FILES})

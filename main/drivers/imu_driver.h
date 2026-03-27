@@ -7,10 +7,7 @@ extern "C" {
 
 #include "esp_err.h"
 #include "i2c_mux.h"
-
-typedef struct {
-    float x, y, z;
-} vec3_t;
+#include "config/config_types.h"
 
 typedef struct {
     i2c_master_dev_handle_t dev;

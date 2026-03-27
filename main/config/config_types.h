@@ -8,6 +8,10 @@ extern "C" {
 #include <stdint.h>
 #include <stdbool.h>
 
+typedef struct {
+    float x, y, z;
+} vec3_t;
+
 #define MAX_SERVOS      4
 #define MAX_AXES        2
 #define MAX_IMU         2
