@@ -36,7 +36,7 @@ esp_err_t encoder_init(encoder_t *enc, i2c_mux_t *mux, uint8_t mux_channel)
 
     uint8_t reg = AS5600_REG_RAW_ANGLE_H;
     uint8_t data[2] = {0};
-    ret = i2c_master_transmit_receive(enc->dev, &reg, 1, data, 2, -1);
+    ret = i2c_master_transmit_receive(enc->dev, &reg, 1, data, 2, 10);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed initial read of AS5600 on channel %d: %s",
                  mux_channel, esp_err_to_name(ret));
@@ -65,7 +65,7 @@ esp_err_t encoder_read_raw(encoder_t *enc, i2c_mux_t *mux, uint16_t *out_raw)
     /* Read registers 0x0C (high) and 0x0D (low) in a single transaction */
     uint8_t reg = AS5600_REG_RAW_ANGLE_H;
     uint8_t data[2] = {0};
-    ret = i2c_master_transmit_receive(enc->dev, &reg, 1, data, 2, -1);
+    ret = i2c_master_transmit_receive(enc->dev, &reg, 1, data, 2, 10);
     if (ret != ESP_OK) {
         return ret;
     }

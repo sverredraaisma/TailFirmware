@@ -14,6 +14,7 @@
 #include "config/config_manager.h"
 #include "ble_service.h"
 #include "ble/ble_protocol.h"
+#include "config/pin_config.h"
 
 static const char *TAG = "bridge";
 
@@ -22,9 +23,6 @@ static MotionSystem g_motion;
 static LedMatrix g_matrix;
 static LayerCompositor g_compositor;
 static ConfigManager g_config;
-
-// LED strip GPIO (must match main.c define)
-#define LED_STRIP_PIN 7
 
 extern "C" {
 
@@ -72,31 +70,155 @@ void app_config_save_pending(void) {
     g_config.save_pending();
 }
 
+static void write_f32(uint8_t *&p, float v) {
+    memcpy(p, &v, 4);
+    p += 4;
+}
+
 void app_update_ble_state(void) {
     if (ble_service_get_state() != BLE_STATE_CONNECTED) return;
 
-    // Update motion state for BLE reads/notifications
-    uint8_t motion_buf[MOTION_STATE_SIZE];
-    uint8_t *p = motion_buf;
+    const system_config_t &cfg = g_config.get_config();
 
-    *p++ = g_config.get_config().motion_pattern.pattern_id;
+    // ── FF02: Motion State ──────────────────────────────────
+    // [pattern_id: u8]
+    // [pattern_params: 8 x f32]
+    // [encoder0..3: 4 x f32]
+    // [gravity_xyz: 3 x f32]
+    // [axis0_limits: 2 x f32] [axis1_limits: 2 x f32]
+    // Total: 1 + 32 + 16 + 12 + 16 = 77 bytes
+    {
+        uint8_t buf[128];
+        uint8_t *p = buf;
 
-    for (int axis = 0; axis < 2; axis++) {
-        for (int half = 0; half < 2; half++) {
-            float pos = g_motion.get_position(axis, half);
-            memcpy(p, &pos, 4);
-            p += 4;
+        *p++ = cfg.motion_pattern.pattern_id;
+
+        // Pattern parameters (so app knows current values)
+        for (int i = 0; i < 8; i++) {
+            write_f32(p, cfg.motion_pattern.params[i]);
         }
+
+        // Encoder positions
+        for (int axis = 0; axis < 2; axis++) {
+            for (int half = 0; half < 2; half++) {
+                write_f32(p, g_motion.get_position(axis, half));
+            }
+        }
+
+        // Gravity vector
+        vec3_t grav = g_motion.get_gravity();
+        write_f32(p, grav.x);
+        write_f32(p, grav.y);
+        write_f32(p, grav.z);
+
+        // Axis limits
+        for (int a = 0; a < MAX_AXES; a++) {
+            write_f32(p, cfg.axes[a].limit_min);
+            write_f32(p, cfg.axes[a].limit_max);
+        }
+
+        ble_set_motion_state(buf, (uint16_t)(p - buf));
     }
 
-    vec3_t grav = g_motion.get_gravity();
-    memcpy(p, &grav.x, 4); p += 4;
-    memcpy(p, &grav.y, 4); p += 4;
-    memcpy(p, &grav.z, 4); p += 4;
+    // ── FF04: LED State ─────────────────────────────────────
+    // [num_rings: u8] [leds_per_ring: u8 * num_rings]
+    // [num_layers: u8]
+    // For each layer:
+    //   [effect_id: u8] [blend_mode: u8] [enabled: u8]
+    //   [flip_x: u8] [flip_y: u8] [mirror_x: u8] [mirror_y: u8]
+    //   [params: 8 x f32]
+    // Per layer: 3 + 4 + 32 = 39 bytes. Max 8 layers = 312 + header
+    // Exceeds STATE_BUF_MAX (128), so cap at what fits.
+    {
+        uint8_t buf[128];
+        uint8_t *p = buf;
 
-    ble_set_motion_state(motion_buf, MOTION_STATE_SIZE);
+        // Matrix config
+        *p++ = cfg.led_matrix.num_rings;
+        uint8_t nr = cfg.led_matrix.num_rings;
+        if (nr > MAX_LED_RINGS) nr = MAX_LED_RINGS;
+        for (int i = 0; i < nr; i++) {
+            *p++ = cfg.led_matrix.leds_per_ring[i];
+        }
 
-    // Check tap events and notify
+        // Layers
+        *p++ = cfg.num_layers;
+        for (int i = 0; i < cfg.num_layers && i < MAX_LED_LAYERS; i++) {
+            const layer_config_t &lc = cfg.layers[i];
+
+            // Check we won't overflow buf (need 39 bytes per layer)
+            if ((p - buf) + 39 > sizeof(buf)) break;
+
+            *p++ = lc.effect_id;
+            *p++ = lc.blend_mode;
+            *p++ = lc.enabled ? 1 : 0;
+            *p++ = lc.flip_x ? 1 : 0;
+            *p++ = lc.flip_y ? 1 : 0;
+            *p++ = lc.mirror_x ? 1 : 0;
+            *p++ = lc.mirror_y ? 1 : 0;
+
+            for (int j = 0; j < 8; j++) {
+                write_f32(p, lc.params[j]);
+            }
+        }
+
+        ble_set_led_state(buf, (uint16_t)(p - buf));
+    }
+
+    // ── FF06: System Info ───────────────────────────────────
+    // [firmware_version: 3 x u8]
+    // [num_servos: u8]
+    // Per servo: [axis: u8] [half: u8] [invert: u8] [mux_ch: u8] [kp: f32] [ki: f32] [kd: f32]
+    // Per servo: 4 + 12 = 16 bytes. 4 servos = 64 + 4 = 68 bytes
+    // [num_imus: u8]
+    // Per IMU: [mux_ch: u8] [tap_enabled: u8]
+    {
+        uint8_t buf[128];
+        uint8_t *p = buf;
+
+        // Firmware version
+        *p++ = 1; // major
+        *p++ = 0; // minor
+        *p++ = 0; // patch
+
+        // Servo configs
+        *p++ = MAX_SERVOS;
+        for (int i = 0; i < MAX_SERVOS; i++) {
+            const servo_config_t &sc = cfg.servos[i];
+            *p++ = sc.assignment.axis;
+            *p++ = sc.assignment.half;
+            *p++ = sc.assignment.invert ? 1 : 0;
+            *p++ = sc.assignment.mux_channel;
+            write_f32(p, sc.pid.kp);
+            write_f32(p, sc.pid.ki);
+            write_f32(p, sc.pid.kd);
+        }
+
+        // IMU configs
+        *p++ = MAX_IMU;
+        for (int i = 0; i < MAX_IMU; i++) {
+            *p++ = cfg.imus[i].mux_channel;
+            *p++ = cfg.imus[i].tap_enabled ? 1 : 0;
+        }
+
+        ble_set_system_info(buf, (uint16_t)(p - buf));
+    }
+
+    // ── FF08: Profile list ──────────────────────────────────
+    // [slot_occupied: u8] per slot (4 bytes total)
+    // Simple: just report which slots have data by trying NVS open
+    // (Expensive to check every second, so just report from config)
+    // For now, a static 4-byte mask is sufficient.
+    // TODO: check NVS for actual occupancy
+    {
+        uint8_t buf[MAX_PROFILE_SLOTS];
+        for (int i = 0; i < MAX_PROFILE_SLOTS; i++) {
+            buf[i] = 0; // placeholder - would need NVS check
+        }
+        ble_set_profile_list(buf, MAX_PROFILE_SLOTS);
+    }
+
+    // ── Tap events (FF07 notify) ────────────────────────────
     if (g_motion.check_tap_base()) {
         uint8_t evt = SYS_EVENT_TAP_BASE;
         ble_notify_system_event(&evt, 1);

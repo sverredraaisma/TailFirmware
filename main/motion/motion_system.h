@@ -28,13 +28,19 @@ public:
     bool check_tap_tip();
 
 private:
+    static constexpr int MAX_IMU_FAILURES = 10;
+
     i2c_mux_t *mux_ = nullptr;
-    AxisController axes_[2]; // 0=X, 1=Y
-    imu_t imus_[2];          // 0=base, 1=tip
+    AxisController axes_[2];
+    imu_t imus_[2];
     std::unique_ptr<MotionPattern> pattern_;
 
     vec3_t last_gravity_ = {};
     bool tap_base_ = false;
     bool tap_tip_ = false;
-    float loudness_ = 0; // from FFT stream
+    float loudness_ = 0;
+
+    // Per-IMU failure tracking
+    int imu_fail_count_[MAX_IMU] = {};
+    bool imu_disabled_[MAX_IMU] = {};
 };

@@ -151,18 +151,32 @@ Invalid commands or undersized payloads are silently ignored (logged on device s
 
 ## FF02: Motion State (Read, Notify)
 
-**Payload: 29 bytes.** Updated once per second.
+**Payload: 77 bytes.** Updated once per second.
 
 | Offset | Type | Description |
 |--------|------|-------------|
 | 0 | u8 | Active pattern ID |
-| 1-4 | f32 | Encoder 0 position (degrees from zero) |
-| 5-8 | f32 | Encoder 1 position |
-| 9-12 | f32 | Encoder 2 position |
-| 13-16 | f32 | Encoder 3 position |
-| 17-20 | f32 | Gravity X (from base IMU, in g) |
-| 21-24 | f32 | Gravity Y |
-| 25-28 | f32 | Gravity Z |
+| 1-4 | f32 | Pattern param 0 |
+| 5-8 | f32 | Pattern param 1 |
+| 9-12 | f32 | Pattern param 2 |
+| 13-16 | f32 | Pattern param 3 |
+| 17-20 | f32 | Pattern param 4 |
+| 21-24 | f32 | Pattern param 5 |
+| 25-28 | f32 | Pattern param 6 |
+| 29-32 | f32 | Pattern param 7 |
+| 33-36 | f32 | Encoder 0 position (degrees from zero) |
+| 37-40 | f32 | Encoder 1 position |
+| 41-44 | f32 | Encoder 2 position |
+| 45-48 | f32 | Encoder 3 position |
+| 49-52 | f32 | Gravity X (from base IMU, in g) |
+| 53-56 | f32 | Gravity Y |
+| 57-60 | f32 | Gravity Z |
+| 61-64 | f32 | X axis min limit (degrees) |
+| 65-68 | f32 | X axis max limit |
+| 69-72 | f32 | Y axis min limit |
+| 73-76 | f32 | Y axis max limit |
+
+The companion app can read this on connect to sync its UI with the current device state.
 
 ---
 
@@ -317,10 +331,30 @@ Invalid commands or undersized payloads are silently ignored (logged on device s
 
 ## FF04: LED State (Read, Notify)
 
+Full LED configuration dump. Updated once per second.
+
+**Header:**
+
 | Offset | Type | Description |
 |--------|------|-------------|
-| 0 | u8 | Number of configured layers |
-| 1+ | u8[3] | Per layer: [effect_id, blend_mode, enabled] |
+| 0 | u8 | Number of LED rings |
+| 1 to 1+N-1 | u8[] | LEDs per ring (N = num_rings) |
+| N+1 | u8 | Number of configured layers |
+
+**Per layer (39 bytes each, repeated for each layer):**
+
+| Offset | Type | Description |
+|--------|------|-------------|
+| +0 | u8 | Effect ID |
+| +1 | u8 | Blend mode |
+| +2 | u8 | Enabled (0/1) |
+| +3 | u8 | Flip X (0/1) |
+| +4 | u8 | Flip Y (0/1) |
+| +5 | u8 | Mirror X (0/1) |
+| +6 | u8 | Mirror Y (0/1) |
+| +7 to +38 | f32[8] | Effect parameters 0-7 |
+
+The companion app can read this on connect to reconstruct the full layer stack with all effect parameters and transforms.
 
 ---
 
@@ -351,6 +385,41 @@ Invalid commands or undersized payloads are silently ignored (logged on device s
 Rings are evenly spaced on Y axis (y=0 to y=1). LEDs per ring are evenly spaced on X axis (x=0 to x=1).
 
 **Example:** 5 rings of 8,10,12,10,8: `01 05 08 0A 0C 0A 08`
+
+### Read: System Info
+
+Full hardware configuration dump. Updated once per second.
+
+| Offset | Type | Description |
+|--------|------|-------------|
+| 0 | u8 | Firmware version major |
+| 1 | u8 | Firmware version minor |
+| 2 | u8 | Firmware version patch |
+| 3 | u8 | Number of servos (4) |
+
+Per servo (16 bytes each, repeated 4 times starting at offset 4):
+
+| Offset | Type | Description |
+|--------|------|-------------|
+| +0 | u8 | Axis (0=X, 1=Y) |
+| +1 | u8 | Half (0=first, 1=second) |
+| +2 | u8 | Invert (0/1) |
+| +3 | u8 | I2C mux channel |
+| +4 to +7 | f32 | PID Kp |
+| +8 to +11 | f32 | PID Ki |
+| +12 to +15 | f32 | PID Kd |
+
+After servos (offset 68):
+
+| Offset | Type | Description |
+|--------|------|-------------|
+| 68 | u8 | Number of IMUs (2) |
+| 69 | u8 | IMU 0 mux channel |
+| 70 | u8 | IMU 0 tap enabled (0/1) |
+| 71 | u8 | IMU 1 mux channel |
+| 72 | u8 | IMU 1 tap enabled (0/1) |
+
+The companion app reads FF06 on connect to populate servo config, PID tuning, and IMU settings.
 
 ---
 

@@ -1,16 +1,21 @@
 #include "motion_system.h"
+#include "esp_log.h"
+
+static const char *TAG = "motion_sys";
 
 void MotionSystem::init(i2c_mux_t *mux, const system_config_t &config)
 {
     mux_ = mux;
 
     /*
-     * Find servo indices for each axis half by scanning the servo configs.
-     * Convention: servos[i].assignment.axis / .half identify which axis/half
-     * the servo belongs to.
+     * Default mapping: servo 0 = X first, 1 = X second, 2 = Y first, 3 = Y second.
+     * Overridden by config if servos have been assigned to specific axes.
      */
-    uint8_t servo_idx[MAX_AXES][2] = {};  // [axis][half] -> servo index
-    const servo_config_t *servo_cfg[MAX_AXES][2] = {};
+    uint8_t servo_idx[MAX_AXES][2] = {{0, 1}, {2, 3}};
+    const servo_config_t *servo_cfg[MAX_AXES][2] = {
+        {&config.servos[0], &config.servos[1]},
+        {&config.servos[2], &config.servos[3]},
+    };
 
     for (int i = 0; i < MAX_SERVOS; i++) {
         uint8_t axis = config.servos[i].assignment.axis;
@@ -25,13 +30,26 @@ void MotionSystem::init(i2c_mux_t *mux, const system_config_t &config)
     for (int a = 0; a < MAX_AXES; a++) {
         axes_[a].configure(servo_idx[a][0], servo_idx[a][1],
                            *servo_cfg[a][0], *servo_cfg[a][1]);
-        axes_[a].init_encoders(mux);
+        if (mux) {
+            axes_[a].init_encoders(mux);
+        }
         axes_[a].set_limits(config.axes[a].limit_min, config.axes[a].limit_max);
     }
 
-    /* Initialize IMUs */
+    /* Initialize IMUs with failure tracking */
     for (int i = 0; i < MAX_IMU; i++) {
-        imu_init(&imus_[i], mux, config.imus[i].mux_channel);
+        imu_fail_count_[i] = 0;
+        imu_disabled_[i] = false;
+    }
+    if (mux) {
+        for (int i = 0; i < MAX_IMU; i++) {
+            esp_err_t err = imu_init(&imus_[i], mux, config.imus[i].mux_channel);
+            if (err != ESP_OK) {
+                imu_fail_count_[i] = MAX_IMU_FAILURES;
+                imu_disabled_[i] = true;
+                ESP_LOGW(TAG, "IMU %d init failed, disabled", i);
+            }
+        }
     }
 }
 
@@ -63,13 +81,6 @@ void MotionSystem::set_axis_limits(uint8_t axis, float min_deg, float max_deg)
 
 void MotionSystem::set_pid_gains(uint8_t servo_id, float kp, float ki, float kd)
 {
-    /*
-     * servo_id 0-3 maps to:
-     *   0 -> axis 0, half 0
-     *   1 -> axis 0, half 1
-     *   2 -> axis 1, half 0
-     *   3 -> axis 1, half 1
-     */
     if (servo_id < MAX_SERVOS) {
         uint8_t axis = servo_id / 2;
         uint8_t half = servo_id % 2;
@@ -79,25 +90,41 @@ void MotionSystem::set_pid_gains(uint8_t servo_id, float kp, float ki, float kd)
 
 void MotionSystem::update(float dt)
 {
-    /* Read IMU data */
-    last_gravity_ = imu_get_gravity_vector(&imus_[0], mux_);
+    if (!mux_) return;
 
-    /* Check tap events */
-    if (imu_check_tap(&imus_[0], mux_)) {
-        tap_base_ = true;
+    /* Read base IMU for gravity (if not disabled) */
+    if (!imu_disabled_[0]) {
+        vec3_t accel = {};
+        esp_err_t err = imu_read_accel(&imus_[0], mux_, &accel);
+        if (err == ESP_OK) {
+            last_gravity_ = imu_get_gravity_vector(&imus_[0], mux_);
+            imu_fail_count_[0] = 0;
+        } else {
+            imu_fail_count_[0]++;
+            if (imu_fail_count_[0] >= MAX_IMU_FAILURES) {
+                imu_disabled_[0] = true;
+                ESP_LOGW(TAG, "Base IMU: %d failures, disabled", imu_fail_count_[0]);
+            }
+        }
     }
-    if (imu_check_tap(&imus_[1], mux_)) {
-        tap_tip_ = true;
+
+    /* Check tap events (both IMUs) */
+    for (int i = 0; i < MAX_IMU; i++) {
+        if (imu_disabled_[i]) continue;
+        bool tap = imu_check_tap(&imus_[i], mux_);
+        if (tap) {
+            if (i == 0) tap_base_ = true;
+            else tap_tip_ = true;
+        }
     }
 
     /* Run motion pattern if one is active */
     if (pattern_) {
         MotionInput input = {};
-        /* Gather current encoder positions */
-        input.encoder_angles[0] = axes_[0].get_position(0);  // X first half
-        input.encoder_angles[1] = axes_[0].get_position(1);  // X second half
-        input.encoder_angles[2] = axes_[1].get_position(0);  // Y first half
-        input.encoder_angles[3] = axes_[1].get_position(1);  // Y second half
+        input.encoder_angles[0] = axes_[0].get_position(0);
+        input.encoder_angles[1] = axes_[0].get_position(1);
+        input.encoder_angles[2] = axes_[1].get_position(0);
+        input.encoder_angles[3] = axes_[1].get_position(1);
         input.gravity = last_gravity_;
         input.tap_base = tap_base_;
         input.tap_tip = tap_tip_;
@@ -107,10 +134,6 @@ void MotionSystem::update(float dt)
         MotionOutput output = {};
         pattern_->update(input, output);
 
-        /* Map pattern output to axis targets:
-         *   output[0] = X first half,  output[1] = X second half
-         *   output[2] = Y first half,  output[3] = Y second half
-         */
         axes_[0].set_target(output.target_angles[0], output.target_angles[1]);
         axes_[1].set_target(output.target_angles[2], output.target_angles[3]);
     }

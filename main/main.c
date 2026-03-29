@@ -11,6 +11,7 @@
 #include "ble_service.h"
 #include "ble/ble_protocol.h"
 #include "servo.h"
+#include "config/pin_config.h"
 
 // C++ subsystem headers accessed from C via opaque pointers and wrapper functions
 // defined at the bottom of this file.
@@ -22,16 +23,6 @@ void app_config_save_pending(void);
 void app_update_ble_state(void);
 
 static const char *TAG = "main";
-
-// Hardware pin definitions (compile-time)
-#define I2C_SDA_PIN     1
-#define I2C_SCL_PIN     2
-#define SERVO_0_PIN     3
-#define SERVO_1_PIN     4
-#define SERVO_2_PIN     5
-#define SERVO_3_PIN     6
-#define LED_STRIP_PIN   7
-#define STATUS_LED_PIN  8
 
 // Shared state
 static i2c_mux_t i2c_mux;
@@ -130,8 +121,9 @@ void app_main(void) {
     // Initialize BLE with command dispatcher
     ble_service_init(ble_command_handler);
 
-    // Start tasks (highest priority first)
-    xTaskCreate(motion_ctrl_task, "motion",  4096, NULL, 5, NULL);
+    // Start tasks. NimBLE host runs at priority 5 (created in ble_service_init).
+    // All application tasks must be lower to avoid starving BLE on single-core ESP32-C3.
+    xTaskCreate(motion_ctrl_task, "motion",  4096, NULL, 4, NULL);
     xTaskCreate(led_render_task,  "led_rend", 4096, NULL, 3, NULL);
     xTaskCreate(config_task,      "config",   3072, NULL, 2, NULL);
     xTaskCreate(led_status_task,  "led_stat", 2048, NULL, 1, NULL);

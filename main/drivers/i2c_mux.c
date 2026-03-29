@@ -41,7 +41,7 @@ esp_err_t i2c_mux_select_channel(i2c_mux_t *mux, uint8_t channel) {
         return ESP_OK;
     }
     uint8_t data = 1 << channel;
-    esp_err_t ret = i2c_master_transmit(mux->mux_dev, &data, 1, 100);
+    esp_err_t ret = i2c_master_transmit(mux->mux_dev, &data, 1, 10);
     if (ret == ESP_OK) {
         mux->active_channel = channel;
     }
@@ -50,7 +50,7 @@ esp_err_t i2c_mux_select_channel(i2c_mux_t *mux, uint8_t channel) {
 
 esp_err_t i2c_mux_disable_all(i2c_mux_t *mux) {
     uint8_t data = 0x00;
-    esp_err_t ret = i2c_master_transmit(mux->mux_dev, &data, 1, 100);
+    esp_err_t ret = i2c_master_transmit(mux->mux_dev, &data, 1, 10);
     if (ret == ESP_OK) {
         mux->active_channel = 0xFF;
     }

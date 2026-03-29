@@ -37,7 +37,7 @@ static const char *TAG = "imu";
 #define TAP_THRESHOLD_G     2.5f
 
 // Timeout for I2C operations in ms
-#define I2C_TIMEOUT_MS      100
+#define I2C_TIMEOUT_MS      10
 
 static esp_err_t write_reg(i2c_master_dev_handle_t dev, uint8_t reg, uint8_t val) {
     uint8_t buf[2] = {reg, val};
