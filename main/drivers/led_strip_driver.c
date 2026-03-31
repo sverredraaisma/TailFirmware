@@ -59,3 +59,10 @@ esp_err_t led_strip_driver_clear(tail_led_strip_t strip) {
     if (!strip) return ESP_ERR_INVALID_ARG;
     return led_strip_clear(strip->esp_strip);
 }
+
+esp_err_t led_strip_driver_deinit(tail_led_strip_t strip) {
+    if (!strip) return ESP_ERR_INVALID_ARG;
+    esp_err_t err = led_strip_del(strip->esp_strip);
+    free(strip);
+    return err;
+}

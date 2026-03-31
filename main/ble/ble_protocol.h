@@ -36,10 +36,13 @@
 
 // ── Motion State (FF02) ─────────────────────────────────────────
 // Read/Notify payload:
-//   [pattern_id: u8]
-//   [encoder0: f32] [encoder1: f32] [encoder2: f32] [encoder3: f32]
-//   [gravity_x: f32] [gravity_y: f32] [gravity_z: f32]
-#define MOTION_STATE_SIZE (1 + 4*4 + 3*4)  // 29 bytes
+//   [pattern_id: u8]                          1 byte
+//   [pattern_params: f32 x 8]                32 bytes
+//   [encoder0..3: f32 x 4]                   16 bytes
+//   [gravity_x: f32] [gravity_y: f32] [gravity_z: f32]  12 bytes
+//   [axis0_limit_min: f32] [axis0_limit_max: f32]         8 bytes
+//   [axis1_limit_min: f32] [axis1_limit_max: f32]         8 bytes
+#define MOTION_STATE_SIZE (1 + 8*4 + 4*4 + 3*4 + 4*4)  // 77 bytes
 
 // ── LED Commands (FF03) ─────────────────────────────────────────
 #define LCMD_SET_LAYER          0x01  // [layer: u8] [effect_id: u8] [blend_mode: u8]

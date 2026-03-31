@@ -21,6 +21,7 @@ void app_led_render(float dt);
 void app_process_ble_command(uint16_t chr_uuid_short, const uint8_t *data, uint16_t len);
 void app_config_save_pending(void);
 void app_update_ble_state(void);
+void app_notify_tap_events(void);
 
 static const char *TAG = "main";
 
@@ -66,6 +67,7 @@ static void motion_ctrl_task(void *param) {
 
     while (1) {
         app_motion_update(dt);
+        app_notify_tap_events();
         vTaskDelayUntil(&last_wake, period);
     }
 }

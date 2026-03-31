@@ -31,8 +31,8 @@
 
 | Task | Priority | Stack | Rate | Responsibility |
 |------|----------|-------|------|----------------|
-| `motion` | 5 | 4 KB | 100 Hz | Read encoders + IMUs via I2C mux, run PID, set servo speeds, run active motion pattern |
-| `nimble_host` | 4 | 4 KB | Event | NimBLE stack - handles all BLE operations |
+| `motion` | 4 | 4 KB | 100 Hz | Read encoders + IMUs via I2C mux, run PID, set servo speeds, run active motion pattern |
+| `nimble_host` | 5 | 4 KB | Event | NimBLE stack - handles all BLE operations |
 | `led_rend` | 3 | 4 KB | 30 Hz | Render effect layers via compositor, push pixel buffer to WS2812B strip |
 | `config` | 2 | 3 KB | 1 Hz | Debounced NVS save, update BLE state buffers, check tap events |
 | `led_stat` | 1 | 2 KB | ~5 Hz | Blink onboard LED (fast=advertising, solid=connected, slow=off) |

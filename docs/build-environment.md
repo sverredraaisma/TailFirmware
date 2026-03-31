@@ -61,16 +61,16 @@ The managed component `espressif/led_strip ^2.5` is declared in `main/idf_compon
 
 | Function | GPIO | Notes |
 |----------|------|-------|
-| I2C SDA | 1 | 400 kHz, to TCA9548A mux |
-| I2C SCL | 2 | |
+| I2C SDA | 7 | 400 kHz, to TCA9548A mux |
+| I2C SCL | 8 | |
 | Servo 0 | 3 | LEDC channel 0 |
-| Servo 1 | 4 | LEDC channel 1 |
+| Servo 1 | 9 | LEDC channel 1 |
 | Servo 2 | 5 | LEDC channel 2 |
 | Servo 3 | 6 | LEDC channel 3 |
-| LED strip | 7 | WS2812B via RMT |
-| Status LED | 8 | Onboard LED |
+| LED strip | 4 | WS2812B via RMT |
+| Status LED | 10 | Onboard LED |
 
-Pin assignments are defined in `main/main.c` and can be changed at compile time.
+Pin assignments are defined in `main/config/pin_config.h` and can be changed at compile time.
 
 ## Known Build Notes
 

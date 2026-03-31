@@ -31,4 +31,5 @@ private:
     std::vector<RGB> buffer_;
     uint16_t total_leds_ = 0;
     tail_led_strip_t strip_ = nullptr;
+    int strip_gpio_ = -1;
 };

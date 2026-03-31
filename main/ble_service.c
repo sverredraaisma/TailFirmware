@@ -15,7 +15,8 @@
 static const char *TAG = "ble";
 
 // ── Max buffer size for cached state data ────────────────────────
-#define STATE_BUF_MAX 256
+// FF04 worst case: 1 + MAX_LED_RINGS(20) + 1 + MAX_LED_LAYERS(8)*39 = 334 bytes
+#define STATE_BUF_MAX 400
 
 // ── UUID definitions (little-endian byte order for NimBLE) ───────
 // Service: 0000FF00-0000-1000-8000-00805F9B34FB

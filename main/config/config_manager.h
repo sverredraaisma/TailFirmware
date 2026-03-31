@@ -37,6 +37,10 @@ public:
     /// Get mutable config for initialization.
     system_config_t &get_config_mut() { return config_; }
 
+    /// Apply loaded config to all subsystems. Call after load() at boot,
+    /// and after loading a profile slot.
+    void apply_config();
+
 private:
     MotionSystem *motion_ = nullptr;
     LayerCompositor *compositor_ = nullptr;
@@ -69,7 +73,4 @@ private:
     bool nvs_load_config(const char *ns, system_config_t &cfg);
 
     void mark_dirty();
-
-    // Apply loaded config to all subsystems
-    void apply_config();
 };

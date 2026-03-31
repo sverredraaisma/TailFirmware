@@ -67,10 +67,10 @@ main/
 - Target: ESP32-C3 (RISC-V single-core, 160 MHz, BLE 5.0)
 - Language: C for drivers, C++20 for application logic (patterns, effects, config)
 - BLE stack: NimBLE (ESP-IDF component)
-- Servo PWM: LEDC, 50 Hz, 14-bit, GPIO 3/4/5/6
-- LED strip: WS2812B via RMT, GPIO 7
-- I2C bus: 400 kHz, GPIO 1 (SDA) / 2 (SCL), via TCA9548A mux
-- Status LED: GPIO 8
+- Servo PWM: LEDC, 50 Hz, 14-bit, GPIO 3/9/5/6
+- LED strip: WS2812B via RMT, GPIO 4
+- I2C bus: 400 kHz, GPIO 7 (SDA) / 8 (SCL), via TCA9548A mux
+- Status LED: GPIO 10
 - Debug: USB-Serial-JTAG
 
 ## BLE Service
@@ -96,7 +96,7 @@ All write commands use: `[command_id: u8] [payload...]`. See `docs/ble-protocol.
 - ESP-IDF component model (`main/` directory)
 - `extern "C"` guards on all headers shared between C and C++
 - `vec3_t` and all shared types in `config/config_types.h`
-- FreeRTOS tasks: motion(100Hz, pri5), LED(30Hz, pri3), config(1Hz, pri2), status LED(pri1)
+- FreeRTOS tasks: nimble_host(event, pri5), motion(100Hz, pri4), LED(30Hz, pri3), config(1Hz, pri2), status LED(pri1)
 - NVS namespace `tail_cfg` for active config, `tail_prof0`-`tail_prof3` for profiles
 - BLE command IDs defined in `ble/ble_protocol.h`
 - Effect/pattern extensibility: derive from `LedEffect`/`MotionPattern`, add factory case in config_manager

@@ -7,6 +7,8 @@
 
 #include <cstring>
 #include "esp_log.h"
+#include "nvs.h"
+#include "nvs_flash.h"
 
 #include "motion/motion_system.h"
 #include "led/led_matrix.h"
@@ -47,6 +49,10 @@ void app_init_subsystems(i2c_mux_t *mux) {
 
     // Initialize layer compositor
     g_compositor.init(MAX_LED_LAYERS);
+
+    // Restore LED layers, motion pattern, PID, and axis limits from loaded config.
+    // Must run after compositor and matrix are initialized.
+    g_config.apply_config();
 
     ESP_LOGI(TAG, "Subsystems initialized");
 }
@@ -127,10 +133,9 @@ void app_update_ble_state(void) {
     //   [effect_id: u8] [blend_mode: u8] [enabled: u8]
     //   [flip_x: u8] [flip_y: u8] [mirror_x: u8] [mirror_y: u8]
     //   [params: 8 x f32]
-    // Per layer: 3 + 4 + 32 = 39 bytes. Max 8 layers = 312 + header
-    // Exceeds STATE_BUF_MAX (128), so cap at what fits.
+    // Per layer: 7 + 32 = 39 bytes. Worst case: 1 + 20 + 1 + 8*39 = 334 bytes.
     {
-        uint8_t buf[128];
+        uint8_t buf[400];
         uint8_t *p = buf;
 
         // Matrix config
@@ -145,9 +150,6 @@ void app_update_ble_state(void) {
         *p++ = cfg.num_layers;
         for (int i = 0; i < cfg.num_layers && i < MAX_LED_LAYERS; i++) {
             const layer_config_t &lc = cfg.layers[i];
-
-            // Check we won't overflow buf (need 39 bytes per layer)
-            if ((p - buf) + 39 > sizeof(buf)) break;
 
             *p++ = lc.effect_id;
             *p++ = lc.blend_mode;
@@ -205,20 +207,28 @@ void app_update_ble_state(void) {
     }
 
     // ── FF08: Profile list ──────────────────────────────────
-    // [slot_occupied: u8] per slot (4 bytes total)
-    // Simple: just report which slots have data by trying NVS open
-    // (Expensive to check every second, so just report from config)
-    // For now, a static 4-byte mask is sufficient.
-    // TODO: check NVS for actual occupancy
+    // [slot_occupied: u8] per slot (4 bytes total, 1 = occupied, 0 = empty)
     {
         uint8_t buf[MAX_PROFILE_SLOTS];
         for (int i = 0; i < MAX_PROFILE_SLOTS; i++) {
-            buf[i] = 0; // placeholder - would need NVS check
+            char ns[16];
+            snprintf(ns, sizeof(ns), "tail_prof%d", i);
+            nvs_handle_t handle;
+            if (nvs_open(ns, NVS_READONLY, &handle) == ESP_OK) {
+                size_t sz = 0;
+                esp_err_t err = nvs_get_blob(handle, "cfg", nullptr, &sz);
+                buf[i] = (err == ESP_OK && sz == sizeof(system_config_t)) ? 1 : 0;
+                nvs_close(handle);
+            } else {
+                buf[i] = 0;
+            }
         }
         ble_set_profile_list(buf, MAX_PROFILE_SLOTS);
     }
+}
 
-    // ── Tap events (FF07 notify) ────────────────────────────
+void app_notify_tap_events(void) {
+    if (ble_service_get_state() != BLE_STATE_CONNECTED) return;
     if (g_motion.check_tap_base()) {
         uint8_t evt = SYS_EVENT_TAP_BASE;
         ble_notify_system_event(&evt, 1);

@@ -7,13 +7,13 @@ LedMatrix::LedMatrix() = default;
 
 void LedMatrix::configure(uint8_t num_rings, const uint8_t *leds_per_ring)
 {
-    total_leds_ = 0;
+    uint16_t new_total = 0;
     for (uint8_t r = 0; r < num_rings; r++) {
-        total_leds_ += leds_per_ring[r];
+        new_total += leds_per_ring[r];
     }
 
-    coords_.resize(total_leds_);
-    buffer_.resize(total_leds_);
+    coords_.resize(new_total);
+    buffer_.resize(new_total);
 
     uint16_t global_index = 0;
     for (uint8_t r = 0; r < num_rings; r++) {
@@ -24,6 +24,17 @@ void LedMatrix::configure(uint8_t num_rings, const uint8_t *leds_per_ring)
             coords_[global_index] = {x, y};
             global_index++;
         }
+    }
+
+    // If the LED count changed and the strip is already running, reinitialise
+    // the RMT handle so it knows about the new max_leds.
+    if (new_total != total_leds_ && strip_ != nullptr) {
+        led_strip_driver_deinit(strip_);
+        strip_ = nullptr;
+        total_leds_ = new_total;
+        init_strip(strip_gpio_);
+    } else {
+        total_leds_ = new_total;
     }
 
     ESP_LOGI(TAG, "Configured %d rings, %d total LEDs", num_rings, total_leds_);
@@ -50,6 +61,7 @@ void LedMatrix::push()
 
 void LedMatrix::init_strip(int gpio_num)
 {
+    strip_gpio_ = gpio_num;
     esp_err_t err = led_strip_driver_init(gpio_num, total_leds_, &strip_);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to init LED strip: %s", esp_err_to_name(err));

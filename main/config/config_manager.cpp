@@ -244,9 +244,9 @@ void ConfigManager::handle_led_cmd(const uint8_t *data, uint16_t len)
             uint8_t layer = data[1];
             if (layer >= MAX_LED_LAYERS) return;
             compositor_->remove_layer(layer);
-            config_.layers[layer].effect_id = 0;
+            config_.layers[layer].effect_id = 0xFF; // 0xFF = no effect (invalid ID)
             config_.layers[layer].blend_mode = 0;
-            config_.layers[layer].enabled = true;
+            config_.layers[layer].enabled = false;
             memset(config_.layers[layer].params, 0, sizeof(config_.layers[layer].params));
             mark_dirty();
             ESP_LOGI(TAG, "Layer %u removed", layer);
@@ -592,9 +592,7 @@ void ConfigManager::apply_config()
         if (pattern) {
             // Restore pattern params
             for (int i = 0; i < 8; i++) {
-                if (config_.motion_pattern.params[i] != 0.0f) {
-                    pattern->set_param(i, config_.motion_pattern.params[i]);
-                }
+                pattern->set_param(i, config_.motion_pattern.params[i]);
             }
             motion_->set_pattern(std::move(pattern));
         }
@@ -624,9 +622,7 @@ void ConfigManager::apply_config()
             if (effect) {
                 // Restore effect params
                 for (int p = 0; p < 8; p++) {
-                    if (lc.params[p] != 0.0f) {
-                        effect->set_param(p, lc.params[p]);
-                    }
+                    effect->set_param(p, lc.params[p]);
                 }
                 // Restore transforms
                 effect->flip_x = lc.flip_x;
